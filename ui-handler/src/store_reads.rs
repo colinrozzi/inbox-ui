@@ -19,6 +19,9 @@ pub struct MailboxSummary {
     pub address: String,
 }
 
+// Fields below are read once views land — `allow(dead_code)` keeps the
+// scaffold building clean until the read path is wired.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct InboxMessage {
     pub id: String,
@@ -27,6 +30,7 @@ pub struct InboxMessage {
     pub received_at: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct MessageFull {
     pub id: String,
