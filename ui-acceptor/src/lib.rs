@@ -85,10 +85,12 @@ fn supervisor_stop_child(child_id: String) -> Result<(), String>;
 #[import(module = "theater:simple/store", name = "store-at-label")]
 fn store_store_at_label(store_id: String, label: String, content: Vec<u8>) -> Result<String, String>;
 
-// Plain-TCP listen address. TLS termination is configured separately
-// via [handler.server_tls] in the sentinel-rendered manifest — see
-// sentinel/ui-acceptor.template.toml. Local dev uses :8080 plaintext.
-const LISTEN_ADDR: &str = "0.0.0.0:8080";
+// :8443 to coexist with inbox-acceptor's :443 on the same VPS until
+// frontdoor's SNI router lands. The sentinel-rendered manifest adds
+// [handler.server_tls] on top of this binding — theater wraps the
+// same socket with TLS termination. Local dev runs the same port but
+// without TLS (the in-repo manifest.toml has no server_tls block).
+const LISTEN_ADDR: &str = "0.0.0.0:8443";
 
 // Shared store used by inbox-acceptor; UI piggy-backs so we can read
 // existing mailbox/message data without a parallel store.
