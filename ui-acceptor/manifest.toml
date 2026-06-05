@@ -1,8 +1,9 @@
-# Local-dev manifest for ui-acceptor. Plain HTTP on :8080 — no TLS.
+# Local-dev manifest for ui-acceptor. Plain HTTP on :8443 — no TLS.
 #
 # The sentinel-rendered production manifest lives at
-# sentinel/ui-acceptor.template.toml and adds [handler.server_tls] plus
-# replaces this file path with the release-asset URL.
+# sentinel/ui-acceptor.template.toml and adds [handler.server_tls] (so
+# the same socket terminates TLS) and replaces this file path with the
+# release-asset URL.
 name = "ui-acceptor"
 version = "0.1.0"
 package = "target/wasm32-unknown-unknown/release/ui_acceptor.wasm"

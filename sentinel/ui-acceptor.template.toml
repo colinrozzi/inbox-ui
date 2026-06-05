@@ -34,12 +34,14 @@
 #   sentinel/ui-handler.template.toml as rendered by sentinel itself.
 #
 # COEXISTENCE WITH inbox-acceptor:
-#   inbox-acceptor binds :443. Until frontdoor lands and SNI-routes by
-#   hostname, ui-acceptor binds :8443 (server_tls block below). Once
-#   frontdoor is live this whole block can drop and ui-acceptor moves
-#   to plain TCP on an internal port, with frontdoor terminating TLS
-#   at :443 and routing by SNI. That switchover is a Phase 2 thing —
-#   v0 ships standalone with own TLS.
+#   inbox-acceptor binds :443. ui-acceptor binds :8443 (hardcoded in
+#   ui-acceptor/src/lib.rs LISTEN_ADDR). The server_tls block below
+#   makes theater terminate TLS on that same :8443 socket using the
+#   shared letsencrypt cert. Users hit https://mail.colinrozzi.com:8443
+#   for the UI until frontdoor's SNI router can route ui.* (or similar)
+#   to this backend over the standard :443. At that point, drop the
+#   server_tls block and let frontdoor terminate; the LISTEN_ADDR stays
+#   :8443 as the internal port the front-door forwards to.
 #
 # WHY initial_state IS A SINGLE-LINE TOML LITERAL:
 #   Sentinel embeds this entire template as a STRING value in its own
