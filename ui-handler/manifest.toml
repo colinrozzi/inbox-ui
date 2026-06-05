@@ -1,0 +1,21 @@
+# Local-dev manifest for ui-handler. Spawned per-connection by ui-acceptor.
+#
+# The sentinel-rendered production manifest is at
+# sentinel/ui-handler.template.toml.
+name = "ui-handler"
+version = "0.1.0"
+package = "target/wasm32-unknown-unknown/release/ui_handler.wasm"
+
+[[handler]]
+type = "runtime"
+
+[[handler]]
+type = "tcp"
+
+[[handler]]
+type = "rpc"
+
+[[handler]]
+type = "store"
+base_path = "/tmp/inbox-ui-dev-store"
+store_id = "inbox"
