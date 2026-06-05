@@ -1,14 +1,11 @@
-//! Write path: outbound HTTPS to the inbox API.
-//!
-//! v0 only uses `/api/send`. We hand-build a one-shot HTTP/1.1 request,
-//! open a TLS-upgraded TCP connection to the API, write, read until the
-//! peer closes (or content-length bytes are read), and return the
-//! status code + body to the caller.
+//! Outbound HTTP(S) to the inbox API. Shared by the write path
+//! (`POST /v1/mailboxes/{from}/send`) and the read path (`GET …`).
 //!
 //! Per DESIGN.md §3: the bearer token never leaves the actor sandbox
 //! — it's pulled from the store at init and attached as
 //! `Authorization: Bearer <token>`.
 
+use crate::request::url_encode;
 use crate::{
     log, tcp_close, tcp_connect, tcp_receive, tcp_send, tcp_upgrade_to_tls_client, HandlerState,
 };
@@ -19,7 +16,6 @@ use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct SendRequest<'a> {
-    pub from: &'a str,
     pub to: Vec<&'a str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cc: Vec<&'a str>,
@@ -32,13 +28,30 @@ pub struct ApiResponse {
     pub body: String,
 }
 
-pub fn send_mail(state: &HandlerState, req: &SendRequest<'_>) -> Result<ApiResponse, String> {
-    let body = serde_json::to_string(req)
-        .map_err(|e| format!("serialize SendRequest: {}", e))?;
-    api_post(state, "/api/send", &body)
+pub fn send_mail(
+    state: &HandlerState,
+    from: &str,
+    req: &SendRequest<'_>,
+) -> Result<ApiResponse, String> {
+    let body = serde_json::to_string(req).map_err(|e| format!("serialize SendRequest: {}", e))?;
+    let path = format!("/v1/mailboxes/{}/send", url_encode(from));
+    api_post(state, &path, &body)
 }
 
-fn api_post(state: &HandlerState, path: &str, body: &str) -> Result<ApiResponse, String> {
+pub fn api_get(state: &HandlerState, path: &str) -> Result<ApiResponse, String> {
+    api_request(state, "GET", path, None)
+}
+
+pub fn api_post(state: &HandlerState, path: &str, body: &str) -> Result<ApiResponse, String> {
+    api_request(state, "POST", path, Some(body))
+}
+
+fn api_request(
+    state: &HandlerState,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<ApiResponse, String> {
     let (host, port, use_tls) = parse_base_url(&state.api_base_url)?;
     let conn = tcp_connect(format!("{}:{}", host, port))
         .map_err(|e| format!("tcp_connect {}:{}: {}", host, port, e))?;
@@ -48,23 +61,33 @@ fn api_post(state: &HandlerState, path: &str, body: &str) -> Result<ApiResponse,
             .map_err(|e| format!("tls upgrade to {}: {}", host, e))?;
     }
 
+    let body_str = body.unwrap_or("");
+    let content_headers = if body.is_some() {
+        format!(
+            "Content-Type: application/json\r\nContent-Length: {}\r\n",
+            body_str.len()
+        )
+    } else {
+        String::new()
+    };
+
     let req = format!(
-        "POST {path} HTTP/1.1\r\n\
+        "{method} {path} HTTP/1.1\r\n\
          Host: {host}\r\n\
          Authorization: Bearer {token}\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {len}\r\n\
+         {content_headers}\
          Connection: close\r\n\
          \r\n{body}",
+        method = method,
         path = path,
         host = host,
         token = state.api_bearer_token,
-        len = body.len(),
-        body = body,
+        content_headers = content_headers,
+        body = body_str,
     );
     tcp_send(conn.clone(), req.into_bytes()).map_err(|e| format!("send: {}", e))?;
 
-    // Pull until peer closes or our buffer fills. v0 responses are tiny.
+    // Pull until peer closes or our buffer fills. v0 responses are small.
     let mut accumulated = Vec::new();
     loop {
         match tcp_receive(conn.clone(), 8192) {

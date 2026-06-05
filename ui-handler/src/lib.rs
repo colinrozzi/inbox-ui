@@ -26,10 +26,10 @@ use packr_guest::{export, import, pack_types, GraphValue, Value};
 
 packr_guest::setup_guest!();
 
+mod api_reads;
 mod auth;
 mod render;
 mod request;
-mod store_reads;
 mod views;
 mod write_api;
 

@@ -1,10 +1,10 @@
 use crate::request::url_encode;
-use crate::{render, store_reads, HandlerState};
+use crate::{render, api_reads, HandlerState};
 use alloc::format;
 use alloc::vec::Vec;
 
 pub fn render(addr: &str, id: &str, state: &HandlerState) -> Vec<u8> {
-    let msg = match store_reads::get_message(state, addr, id) {
+    let msg = match api_reads::get_message(state, addr, id) {
         Ok(m) => m,
         Err(e) => return render::error(500, &format!("get message {}/{}: {}", addr, id, e)),
     };

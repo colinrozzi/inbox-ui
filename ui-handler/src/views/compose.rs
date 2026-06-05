@@ -44,14 +44,13 @@ pub fn submit(req: &Request, state: &HandlerState) -> Vec<u8> {
     let cc_list: Vec<&str> = cc.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
 
     let send_req = SendRequest {
-        from: &from,
         to: to_list,
         cc: cc_list,
         subject: &subject,
         body: &body,
     };
 
-    match write_api::send_mail(state, &send_req) {
+    match write_api::send_mail(state, &from, &send_req) {
         Ok(resp) if resp.status >= 200 && resp.status < 300 => {
             render::redirect(&format!("/m/{}", url_encode(&from)))
         }

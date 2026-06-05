@@ -52,22 +52,24 @@ If (B) turns out cheaper than expected, the ui-handler stays the same — only t
 
 ## 3. Wire shape per view
 
-| View              | Read source                          | Write target                                     |
-|-------------------|--------------------------------------|--------------------------------------------------|
-| Mailbox list      | store: `mailboxes/` (list keys)      | —                                                |
-| Inbox for mailbox | store: `messages/{addr}/` (list)     | —                                                |
-| Single message    | store: `messages/{addr}/{id}` (get)  | —                                                |
-| Compose (render)  | — (static form)                       | —                                                |
-| Compose (submit)  | —                                     | `POST https://mail.colinrozzi.com:443/api/send`  |
+Per the 2026-06-05 flip (matching ticket-ui's same decision): the API is the public contract; the store is an implementation detail we don't depend on. Reads AND writes both go through the inbox API.
+
+| View              | Read source                                       | Write target                                       |
+|-------------------|---------------------------------------------------|----------------------------------------------------|
+| Mailbox list      | API: `GET /v1/mailboxes`                          | —                                                  |
+| Inbox for mailbox | API: `GET /v1/mailboxes/{addr}/inbox`             | —                                                  |
+| Single message    | API: `GET /v1/mailboxes/{addr}/inbox` + filter id | —                                                  |
+| Compose (render)  | — (static form)                                   | —                                                  |
+| Compose (submit)  | —                                                 | API: `POST /v1/mailboxes/{from}/send`              |
+
+All API calls go to `${api_base_url}` (production: `https://mail.colinrozzi.com:443`) via `theater:simple/tcp.connect` + `upgrade-to-tls-client`. The bearer token is shared between reads and writes (one shared store label, written by ui-acceptor at init).
 
 Rules:
 
-- **Reads never go through the API.** The store is the source of truth; the API just happens to be the thing that wrote to it. Skipping the HTTP hop is faster, removes the API as a dependency for the read path, and gives us a natural place to add caching later.
-- **Writes always go through the API.** Re-deriving send semantics (sealing envelopes, fanout to recipients, deduping, etc.) is exactly what the API exists to do. Don't fork it.
-- **One bearer token, server-side.** ui-handler holds the API bearer in env (`INBOX_API_TOKEN`). Browser never sees it.
+- **Reads and writes both go through the inbox API.** The API is the public contract; the store is an implementation detail. Schema changes can land backend-only without touching the UI.
+- **One bearer token, server-side.** ui-handler reads the bearer from the shared store at its own init; ui-acceptor wrote it there from `initial_state`. The browser never sees it.
 - **No JS-driven fetches in v0.** Every state change is a form POST returning a redirect. HTMX-style partials can come later; the cost of going from full-page to partials is small, the cost of going from SPA back to forms is large.
-
-Exact store key layout will be confirmed with inbox-dev before any handler code lands (see §7).
+- **Single-message reads piggyback on the inbox listing.** No dedicated `GET /v1/mailboxes/{addr}/inbox/{id}` endpoint exists; we fetch the inbox page (which includes message bodies) and filter to the requested id. Extra body-fetch per single-message page load is acceptable until the inbox page grows large enough that paginating matters.
 
 ## 4. Actor decomposition
 
@@ -125,10 +127,10 @@ Anything on this list re-enters scope only when there is a concrete user-facing 
 
 Before any handler code is written:
 
-1. **Store key layout.** What is the actual prefix/key shape for `mailboxes/` and `messages/{addr}/`? CLAUDE.md gives the store_id and mount path but not the schema. Need to confirm with inbox-dev.
-2. **API base URL from inside an actor.** Do ui-handler actors reach `mail.colinrozzi.com:443` over the public internet, or is there an internal hostname / loopback shortcut sentinel exposes? Need confirmation; affects cert validation behavior.
+1. ~~**Store key layout.** What is the actual prefix/key shape for `mailboxes/` and `messages/{addr}/`?~~ — **Moot** as of the §3 flip. The API insulates us from the store schema.
+2. **API base URL from inside an actor.** Do ui-handler actors reach `mail.colinrozzi.com:443` over the public internet, or is there an internal hostname / loopback shortcut sentinel exposes? Production answer is the public URL via the same Let's Encrypt cert; "loopback" is the conceptual category, not a specific endpoint. Revisit if frontdoor exposes an internal-only entry.
 3. **TLS cert path inside the actor sandbox.** Where does sentinel mount the Let's Encrypt fullchain + key for the new actor? Same path as inbox-acceptor, or does sentinel-dev need to add a mount?
-4. **DNS / port.** OK to use `mail.colinrozzi.com:8443` for v0, or does Colin want a new subdomain provisioned up-front?
+4. **DNS / port.** OK to use `mail.colinrozzi.com:8443` for v0, or does Colin want a new subdomain provisioned up-front? — Probably moot once frontdoor SNI-routes; revisit then.
 
 Answers to 1–3 don't change the design; they just unblock implementation. Answer to 4 is a Colin call.
 
