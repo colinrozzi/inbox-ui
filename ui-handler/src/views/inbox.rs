@@ -1,11 +1,11 @@
 use crate::request::url_encode;
-use crate::{render, store_reads, HandlerState};
+use crate::{render, api_reads, HandlerState};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 pub fn render(addr: &str, state: &HandlerState) -> Vec<u8> {
-    let messages = match store_reads::list_inbox(state, addr) {
+    let messages = match api_reads::list_inbox(state, addr) {
         Ok(m) => m,
         Err(e) => return render::error(500, &format!("list inbox {}: {}", addr, e)),
     };
