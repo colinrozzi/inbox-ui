@@ -1,0 +1,78 @@
+# Sentinel-managed deploy template for ui-acceptor.
+#
+# Sentinel renders this template by literal substring substitution of
+# the placeholders below (each wrapped in doubled underscores) from
+# its per-child config at every spawn:
+#
+#   children: {
+#     "ui-acceptor": {
+#       manifest_template: <contents of this file>,
+#       default_package:   "<canonical ui_acceptor.wasm URL>",
+#       secrets: {
+#         "BEARER_TOKEN":         "...",
+#         "BASIC_AUTH":           "...",
+#         "API_BASE_URL":         "https://mail.colinrozzi.com:443",
+#         "UI_HANDLER_MANIFEST":  "https://github.com/colinrozzi/inbox-ui/releases/.../ui-handler.manifest.toml"
+#       }
+#     }
+#   }
+#
+# OPERATOR NOTE — BASIC_AUTH FORMAT:
+#   Plain "<user>:<password>". HTTP Basic header decodes to exactly this
+#   string for a successful match. v0 is single-credential — replace
+#   before a second user exists.
+#
+# OPERATOR NOTE — API_BASE_URL:
+#   Points at the inbox API. Production = "https://mail.colinrozzi.com:443".
+#   The ui-handler opens an outbound TLS connection to this for /api/send.
+#   Once frontdoor SNI-routing lands, the public hostname may move; this
+#   field is what to update.
+#
+# OPERATOR NOTE — UI_HANDLER_MANIFEST:
+#   Opaque theater resolve_reference for the ui-handler sub-manifest.
+#   For sentinel-managed deploy use the https:// release-asset URL of
+#   sentinel/ui-handler.template.toml as rendered by sentinel itself.
+#
+# COEXISTENCE WITH inbox-acceptor:
+#   inbox-acceptor binds :443. Until frontdoor lands and SNI-routes by
+#   hostname, ui-acceptor binds :8443 (server_tls block below). Once
+#   frontdoor is live this whole block can drop and ui-acceptor moves
+#   to plain TCP on an internal port, with frontdoor terminating TLS
+#   at :443 and routing by SNI. That switchover is a Phase 2 thing —
+#   v0 ships standalone with own TLS.
+#
+# WHY initial_state IS A SINGLE-LINE TOML LITERAL:
+#   Sentinel embeds this entire template as a STRING value in its own
+#   outer manifest, which itself uses TOML triple-quote literal syntax.
+#   Inner triple-quotes would close the outer string early. See the
+#   same operator note in the inbox-acceptor template.
+
+name = "ui-acceptor"
+version = "0.1.0"
+package = "__PACKAGE__"
+initial_state = '{"bearer_token":"__BEARER_TOKEN__","basic_auth":"__BASIC_AUTH__","api_base_url":"__API_BASE_URL__","ui_handler_manifest":"__UI_HANDLER_MANIFEST__"}'
+
+[[handler]]
+type = "runtime"
+
+[[handler]]
+type = "tcp"
+
+# Same Let's Encrypt cert that inbox-acceptor uses. Both live on the
+# same VPS; certbot renews in place. If/when the UI moves to a separate
+# subdomain (inbox.colinrozzi.com), this points at that cert pair.
+[handler.server_tls]
+enabled = true
+cert = "/etc/letsencrypt/live/mail.colinrozzi.com/fullchain.pem"
+key = "/etc/letsencrypt/live/mail.colinrozzi.com/privkey.pem"
+
+[[handler]]
+type = "supervisor"
+
+[[handler]]
+type = "rpc"
+
+[[handler]]
+type = "store"
+base_path = "/mnt/main-volume/inbox/store"
+store_id = "inbox"

@@ -1,0 +1,181 @@
+/* inbox-ui v0 stylesheet — embedded into the wasm via include_str!,
+ * served at /static/style.css.
+ *
+ * Goals: legible, fast, no framework. ~150 lines.
+ */
+
+:root {
+  --fg: #1a1a1a;
+  --fg-muted: #666;
+  --bg: #fafafa;
+  --bg-card: #fff;
+  --accent: #0a58ca;
+  --border: #ddd;
+  --err: #b30000;
+  --font: system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--font);
+  color: var(--fg);
+  background: var(--bg);
+  margin: 0;
+  line-height: 1.5;
+}
+
+header {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+}
+header a {
+  color: var(--accent);
+  text-decoration: none;
+  margin-right: 0.75rem;
+}
+header a:hover { text-decoration: underline; }
+
+main {
+  max-width: 60rem;
+  margin: 1.5rem auto;
+  padding: 0 1.5rem;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+ul.mailboxes,
+ul.inbox {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ul.mailboxes li,
+ul.inbox li {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-bottom: none;
+}
+ul.mailboxes li:last-child,
+ul.inbox li:last-child {
+  border-bottom: 1px solid var(--border);
+}
+ul.mailboxes li a,
+ul.inbox li a {
+  display: block;
+  padding: 0.75rem 1rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+ul.mailboxes li a:hover,
+ul.inbox li a:hover {
+  background: #f0f4ff;
+}
+
+ul.inbox .from {
+  display: inline-block;
+  width: 16rem;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+ul.inbox .subject { font-weight: 500; }
+
+li.empty {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+article.message {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+}
+dl.headers {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+dl.headers dt { font-weight: 500; }
+dl.headers dd { margin: 0; }
+
+pre.body {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: var(--bg);
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+form.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+}
+form.compose label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+form.compose input,
+form.compose textarea {
+  margin-top: 0.25rem;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+form.compose textarea {
+  font-family: var(--mono);
+  resize: vertical;
+}
+form.compose button {
+  align-self: flex-start;
+  padding: 0.5rem 1.25rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+form.compose button:hover { background: #094bb0; }
+
+p.actions {
+  margin: 1rem 0;
+}
+p.actions a {
+  color: var(--accent);
+  text-decoration: none;
+}
+p.actions a:hover { text-decoration: underline; }
+
+p.err {
+  color: var(--err);
+  background: #fee;
+  border: 1px solid #fbb;
+  padding: 0.75rem 1rem;
+  border-radius: 3px;
+}
