@@ -85,12 +85,13 @@ fn supervisor_stop_child(child_id: String) -> Result<(), String>;
 #[import(module = "theater:simple/store", name = "store-at-label")]
 fn store_store_at_label(store_id: String, label: String, content: Vec<u8>) -> Result<String, String>;
 
-// :8443 to coexist with inbox-acceptor's :443 on the same VPS until
-// frontdoor's SNI router lands. The sentinel-rendered manifest adds
-// [handler.server_tls] on top of this binding — theater wraps the
-// same socket with TLS termination. Local dev runs the same port but
-// without TLS (the in-repo manifest.toml has no server_tls block).
-const LISTEN_ADDR: &str = "0.0.0.0:8443";
+// :9443 per the 2026-06-05 cutover map (sentinel-dev id=5):
+//   frontdoor:443 → SNI-peek → forwards encrypted bytes to 127.0.0.1:9443.
+// inbox-ui terminates TLS with the cert mounted by sentinel/the operator
+// (cert path is a placeholder in sentinel/ui-acceptor.template.toml).
+// Local dev binds the same port without TLS (the in-repo manifest.toml
+// has no [handler.server_tls] block).
+const LISTEN_ADDR: &str = "0.0.0.0:9443";
 
 // Shared store used by inbox-acceptor; UI piggy-backs so we can read
 // existing mailbox/message data without a parallel store.

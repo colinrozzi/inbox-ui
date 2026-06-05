@@ -1,26 +1,26 @@
 # Sentinel-managed deploy template for ui-handler. One actor is spawned
 # per inbound TCP connection by ui-acceptor; this template configures
 # its runtime, store access, and outbound-TLS capability for the
-# /api/send call.
+# read/write API calls.
 
-name = "ui-handler"
+name = "inbox-ui-handler"
 version = "0.1.0"
 package = "__PACKAGE__"
 
 [[handler]]
 type = "runtime"
 
-# tcp covers both the inbound transferred connection and the outbound
-# connect()+upgrade-to-tls-client to the API for /api/send.
+# tcp covers both the inbound transferred connection (from ui-acceptor)
+# and the outbound connect()+upgrade-to-tls-client to the inbox API for
+# every read (GET /v1/mailboxes/...) and write (POST .../send).
 [[handler]]
 type = "tcp"
 
 [[handler]]
 type = "rpc"
 
-# Shared store with inbox-acceptor — we read mailbox/message data from
-# here and pull the bearer + basic-auth secrets the acceptor wrote at
-# init.
+# Shared store with inbox-acceptor — pulls the bearer + basic-auth
+# secrets the acceptor wrote at init.
 [[handler]]
 type = "store"
 base_path = "/mnt/main-volume/inbox/store"
