@@ -29,9 +29,9 @@ flake.nix      Build (wasm32-unknown-unknown)
 # build both wasms
 nix build
 
-# spin up against a local theater (plain HTTP on :8443)
+# spin up against a local theater (plain HTTP on :9443)
 theater start ui-acceptor/manifest.toml
-curl http://localhost:8443/
+curl http://localhost:9443/
 ```
 
 Production deploy is via sentinel using the templates in `sentinel/` — sub-manifest URLs and secrets are passed in from sentinel's per-child config.

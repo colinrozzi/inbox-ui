@@ -1,0 +1,81 @@
+name: Release
+
+# Triggered by pushing a `release-YYYYMMDD-<sha>` tag (or manually). Builds
+# both wasms via `nix build`, copies the sentinel sub-manifest templates
+# alongside, and uploads everything as release assets with the same
+# stage-tagged naming convention used across the theater ecosystem.
+#
+# Sentinel consumes these URLs as its `children.inbox-ui` config:
+#   default_package    = .../inbox-ui-acceptor-<stage>.wasm
+#   manifest_template  = .../inbox-ui-acceptor-<stage>.toml  (with __PACKAGE__/__BEARER_TOKEN__/... substituted at spawn)
+# The acceptor's UI_HANDLER_MANIFEST placeholder is in turn set to the
+# matching `inbox-ui-handler-<stage>.toml` URL, and that template's own
+# __PACKAGE__ resolves to `inbox-ui-handler-<stage>.wasm`.
+
+on:
+  push:
+    tags: ['release-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build + tag + upload artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build wasms
+        run: nix build
+
+      - name: Create GitHub release and upload artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$GITHUB_REF_NAME" ] && [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            DATE=$(date +%Y%m%d)
+            SHA=$(git rev-parse --short=7 HEAD)
+            TAG="release-$DATE-$SHA"
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          gh release create "$TAG" --generate-notes
+
+          STAGE_TAG="${TAG#release-}"
+          ASSETS=()
+
+          # Per-actor wasms — stage-tagged so the URL is stable for
+          # sentinel to pin.
+          for actor in ui_acceptor ui_handler; do
+            ASSET="inbox-${actor//_/-}-${STAGE_TAG}.wasm"
+            cp "$(realpath result)/${actor}.wasm" "${ASSET}"
+            chmod +w "${ASSET}"
+            ASSETS+=("${ASSET}")
+          done
+
+          # Sentinel sub-manifest templates as-is. They contain the
+          # __PACKAGE__/__BEARER_TOKEN__/... placeholders sentinel
+          # substitutes at spawn (see sentinel/ui-*.template.toml).
+          for tmpl in ui-acceptor ui-handler; do
+            ASSET="inbox-${tmpl}-${STAGE_TAG}.toml"
+            cp "sentinel/${tmpl}.template.toml" "${ASSET}"
+            ASSETS+=("${ASSET}")
+          done
+
+          gh release upload "$TAG" "${ASSETS[@]}"
+
+          echo "Released $TAG with assets:"
+          printf '  %s\n' "${ASSETS[@]}"

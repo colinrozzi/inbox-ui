@@ -5,14 +5,16 @@
 # its per-child config at every spawn:
 #
 #   children: {
-#     "ui-acceptor": {
+#     "inbox-ui": {
 #       manifest_template: <contents of this file>,
-#       default_package:   "<canonical ui_acceptor.wasm URL>",
+#       default_package:   "<canonical inbox-ui-acceptor.wasm URL>",
 #       secrets: {
 #         "BEARER_TOKEN":         "...",
 #         "BASIC_AUTH":           "...",
 #         "API_BASE_URL":         "https://mail.colinrozzi.com:443",
-#         "UI_HANDLER_MANIFEST":  "https://github.com/colinrozzi/inbox-ui/releases/.../ui-handler.manifest.toml"
+#         "UI_HANDLER_MANIFEST":  "<https URL of inbox-ui-handler-*.toml>",
+#         "CERT_PATH":            "/etc/letsencrypt/live/<host>/fullchain.pem",
+#         "KEY_PATH":             "/etc/letsencrypt/live/<host>/privkey.pem"
 #       }
 #     }
 #   }
@@ -24,32 +26,39 @@
 #
 # OPERATOR NOTE — API_BASE_URL:
 #   Points at the inbox API. Production = "https://mail.colinrozzi.com:443".
-#   The ui-handler opens an outbound TLS connection to this for /api/send.
-#   Once frontdoor SNI-routing lands, the public hostname may move; this
-#   field is what to update.
+#   The ui-handler opens an outbound TLS connection to this address for
+#   reads and writes. If the inbox API moves behind a different
+#   hostname/port, this is the field to update.
 #
 # OPERATOR NOTE — UI_HANDLER_MANIFEST:
 #   Opaque theater resolve_reference for the ui-handler sub-manifest.
 #   For sentinel-managed deploy use the https:// release-asset URL of
-#   sentinel/ui-handler.template.toml as rendered by sentinel itself.
+#   `inbox-ui-handler-<release>.toml` from this repo's releases.
 #
-# COEXISTENCE WITH inbox-acceptor:
-#   inbox-acceptor binds :443. ui-acceptor binds :8443 (hardcoded in
-#   ui-acceptor/src/lib.rs LISTEN_ADDR). The server_tls block below
-#   makes theater terminate TLS on that same :8443 socket using the
-#   shared letsencrypt cert. Users hit https://mail.colinrozzi.com:8443
-#   for the UI until frontdoor's SNI router can route ui.* (or similar)
-#   to this backend over the standard :443. At that point, drop the
-#   server_tls block and let frontdoor terminate; the LISTEN_ADDR stays
-#   :8443 as the internal port the front-door forwards to.
+# OPERATOR NOTE — CERT_PATH / KEY_PATH:
+#   The frontdoor SNI-router peeks the ClientHello and forwards
+#   encrypted bytes to 127.0.0.1:9443; this actor terminates TLS itself
+#   on that socket. The cert it presents MUST include the SNI hostname
+#   users type — production is `inbox.colinrozzi.com`, so the operator
+#   needs a cert covering that name (either a dedicated letsencrypt
+#   entry or a multi-SAN cert that includes it). Pre-provisioning the
+#   cert is a one-time operator step before the cutover; the path goes
+#   into sentinel's CERT_PATH / KEY_PATH secrets for this child.
+#
+# LISTEN PORT / FRONTDOOR HANDOFF:
+#   ui-acceptor's `LISTEN_ADDR` is hardcoded to 0.0.0.0:9443 (see
+#   ui-acceptor/src/lib.rs). frontdoor at :443 SNI-routes
+#   `inbox.colinrozzi.com` → 127.0.0.1:9443; we own TLS termination on
+#   that socket via the server_tls block below. Per
+#   project_frontdoor_actor_direction: backends keep own TLS.
 #
 # WHY initial_state IS A SINGLE-LINE TOML LITERAL:
 #   Sentinel embeds this entire template as a STRING value in its own
 #   outer manifest, which itself uses TOML triple-quote literal syntax.
-#   Inner triple-quotes would close the outer string early. See the
-#   same operator note in the inbox-acceptor template.
+#   Inner triple-quotes would close the outer string early. Same
+#   operator note exists in inbox-acceptor.template.toml.
 
-name = "ui-acceptor"
+name = "inbox-ui-acceptor"
 version = "0.1.0"
 package = "__PACKAGE__"
 initial_state = '{"bearer_token":"__BEARER_TOKEN__","basic_auth":"__BASIC_AUTH__","api_base_url":"__API_BASE_URL__","ui_handler_manifest":"__UI_HANDLER_MANIFEST__"}'
@@ -60,13 +69,13 @@ type = "runtime"
 [[handler]]
 type = "tcp"
 
-# Same Let's Encrypt cert that inbox-acceptor uses. Both live on the
-# same VPS; certbot renews in place. If/when the UI moves to a separate
-# subdomain (inbox.colinrozzi.com), this points at that cert pair.
+# Theater terminates TLS on the LISTEN_ADDR socket using the cert+key
+# at the operator-provided paths. See OPERATOR NOTE — CERT_PATH/KEY_PATH
+# above for the SAN constraint.
 [handler.server_tls]
 enabled = true
-cert = "/etc/letsencrypt/live/mail.colinrozzi.com/fullchain.pem"
-key = "/etc/letsencrypt/live/mail.colinrozzi.com/privkey.pem"
+cert = "__CERT_PATH__"
+key = "__KEY_PATH__"
 
 [[handler]]
 type = "supervisor"

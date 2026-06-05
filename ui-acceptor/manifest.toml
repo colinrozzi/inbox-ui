@@ -1,4 +1,4 @@
-# Local-dev manifest for ui-acceptor. Plain HTTP on :8443 — no TLS.
+# Local-dev manifest for ui-acceptor. Plain HTTP on :9443 — no TLS.
 #
 # The sentinel-rendered production manifest lives at
 # sentinel/ui-acceptor.template.toml and adds [handler.server_tls] (so
