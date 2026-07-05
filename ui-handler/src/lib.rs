@@ -11,6 +11,7 @@
 //!   GET  /compose                  → compose form
 //!   POST /send                     → submit compose → API → 303 → /m/<from>
 //!   GET  /static/style.css         → embedded stylesheet
+//!   GET  /healthz                  → readiness probe (pre-auth, 200 "ok")
 //!
 //! Reads (mailbox list, inbox listing, message body) go through the
 //! inbox API over TLS — see `api_reads.rs` — per the 2026-06-05
@@ -151,6 +152,15 @@ fn dispatch(request_bytes: &[u8], state: &HandlerState) -> Vec<u8> {
     // still load the stylesheet.
     if req.method == "GET" && req.path == "/static/style.css" {
         return render::css(views::STYLE_CSS);
+    }
+
+    // Readiness probe for the supervisor (sentinel health-gates on this).
+    // Pre-auth and dependency-free: a 200 proves the acceptor accepted the
+    // connection and successfully spawned a handler that can respond. It
+    // deliberately does NOT touch the store or upstream API, so a transient
+    // API blip can't fail the health check and trigger a respawn.
+    if req.method == "GET" && req.path == "/healthz" {
+        return render::ok_text("ok");
     }
 
     if !auth::check(&req, &state.basic_auth_credential) {

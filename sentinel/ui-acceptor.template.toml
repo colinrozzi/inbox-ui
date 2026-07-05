@@ -1,20 +1,24 @@
 # Sentinel-managed deploy template for ui-acceptor.
 #
-# Sentinel renders this template by literal substring substitution of
-# the placeholders below (each wrapped in doubled underscores) from
-# its per-child config at every spawn:
+# Phase A (current): a single clean multi-child sentinel spawns this actor
+# as the named in-theater child "inbox-ui" (Topology B, per sentinel-dev
+# id=17). Spawn-on-init; crash -> respawn (rate-limited); external stop ->
+# no respawn. No public routing yet — bring-up order is UIs first, then
+# frontdoor, then the public-routing cutover.
+#
+# Sentinel renders this template by literal substring substitution of the
+# placeholders below (each wrapped in doubled underscores) from its
+# per-child config at every spawn:
 #
 #   children: {
 #     "inbox-ui": {
 #       manifest_template: <contents of this file>,
 #       default_package:   "<canonical inbox-ui-acceptor.wasm URL>",
 #       secrets: {
-#         "BEARER_TOKEN":         "...",
-#         "BASIC_AUTH":           "...",
+#         "BEARER_TOKEN":         "...",     # API bearer for reads + sends
+#         "BASIC_AUTH":           "...",     # "<user>:<password>"
 #         "API_BASE_URL":         "https://mail.colinrozzi.com:443",
-#         "UI_HANDLER_MANIFEST":  "<https URL of inbox-ui-handler-*.toml>",
-#         "CERT_PATH":            "/etc/letsencrypt/live/<host>/fullchain.pem",
-#         "KEY_PATH":             "/etc/letsencrypt/live/<host>/privkey.pem"
+#         "UI_HANDLER_MANIFEST":  "<https URL of inbox-ui-handler-*.toml>"
 #       }
 #     }
 #   }
@@ -27,7 +31,8 @@
 # OPERATOR NOTE — API_BASE_URL:
 #   Points at the inbox API. Production = "https://mail.colinrozzi.com:443".
 #   The ui-handler opens an outbound TLS connection to this address for
-#   reads and writes. If the inbox API moves behind a different
+#   reads and writes (its own [handler.client_tls], see
+#   ui-handler.template.toml). If the inbox API moves behind a different
 #   hostname/port, this is the field to update.
 #
 # OPERATOR NOTE — UI_HANDLER_MANIFEST:
@@ -35,28 +40,26 @@
 #   For sentinel-managed deploy use the https:// release-asset URL of
 #   `inbox-ui-handler-<release>.toml` from this repo's releases.
 #
-# OPERATOR NOTE — CERT_PATH / KEY_PATH:
-#   The frontdoor SNI-router peeks the ClientHello and forwards
-#   encrypted bytes to 127.0.0.1:9443; this actor terminates TLS itself
-#   on that socket. The cert it presents MUST include the SNI hostname
-#   users type — production is `inbox.colinrozzi.com`, so the operator
-#   needs a cert covering that name (either a dedicated letsencrypt
-#   entry or a multi-SAN cert that includes it). Pre-provisioning the
-#   cert is a one-time operator step before the cutover; the path goes
-#   into sentinel's CERT_PATH / KEY_PATH secrets for this child.
+# LISTEN ADDRESS:
+#   ui-acceptor binds 127.0.0.1:9443 (hardcoded, see ui-acceptor/src/lib.rs).
+#   Loopback-only and plain HTTP in Phase A — nothing outside the host
+#   reaches it. Readiness: an unauthenticated `GET /healthz` returns 200
+#   "ok" (it spawns a handler and replies without touching the store or
+#   upstream API), which is what sentinel should health-gate on.
 #
-# LISTEN PORT / FRONTDOOR HANDOFF:
-#   ui-acceptor's `LISTEN_ADDR` is hardcoded to 0.0.0.0:9443 (see
-#   ui-acceptor/src/lib.rs). frontdoor at :443 SNI-routes
-#   `inbox.colinrozzi.com` → 127.0.0.1:9443; we own TLS termination on
-#   that socket via the server_tls block below. Per
-#   project_frontdoor_actor_direction: backends keep own TLS.
+# DEFERRED TO THE FRONTDOOR-CUTOVER PHASE (not Phase A):
+#   When frontdoor at :443 SNI-routes inbox.colinrozzi.com -> 127.0.0.1:9443,
+#   this actor will terminate TLS on that socket. That needs (a) a cert
+#   covering inbox.colinrozzi.com provisioned on the host, and (b) a
+#   [handler.server_tls] block here wired to CERT_PATH/KEY_PATH secrets.
+#   Both are intentionally omitted now so Phase A does not block on cert
+#   provisioning. Re-add at the cutover.
 #
 # WHY initial_state IS A SINGLE-LINE TOML LITERAL:
 #   Sentinel embeds this entire template as a STRING value in its own
 #   outer manifest, which itself uses TOML triple-quote literal syntax.
-#   Inner triple-quotes would close the outer string early. Same
-#   operator note exists in inbox-acceptor.template.toml.
+#   Inner triple-quotes would close the outer string early. Same operator
+#   note exists in inbox-acceptor.template.toml.
 
 name = "inbox-ui-acceptor"
 version = "0.1.0"
@@ -66,23 +69,20 @@ initial_state = '{"bearer_token":"__BEARER_TOKEN__","basic_auth":"__BASIC_AUTH__
 [[handler]]
 type = "runtime"
 
+# Plain-HTTP listener on 127.0.0.1:9443 in Phase A. No [handler.server_tls]
+# yet — see "DEFERRED TO THE FRONTDOOR-CUTOVER PHASE" above.
 [[handler]]
 type = "tcp"
 
-# Theater terminates TLS on the LISTEN_ADDR socket using the cert+key
-# at the operator-provided paths. See OPERATOR NOTE — CERT_PATH/KEY_PATH
-# above for the SAN constraint.
-[handler.server_tls]
-enabled = true
-cert = "__CERT_PATH__"
-key = "__KEY_PATH__"
-
+# ui-acceptor spawns a fresh ui-handler child per connection.
 [[handler]]
 type = "supervisor"
 
 [[handler]]
 type = "rpc"
 
+# Shared store with inbox-acceptor — the acceptor writes the bearer +
+# basic-auth secrets here at init; each ui-handler reads them back.
 [[handler]]
 type = "store"
 base_path = "/mnt/main-volume/inbox/store"
