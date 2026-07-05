@@ -53,7 +53,6 @@ pack_types! {
             receive: func(connection-id: string, max-bytes: u32) -> result<list<u8>, string>,
             send: func(connection-id: string, data: list<u8>) -> result<u64, string>,
             close: func(connection-id: string) -> result<_, string>,
-            upgrade-to-tls-client: func(connection-id: string, server-name: string) -> result<_, string>,
         }
         theater:simple/store {
             get: func(store-id: string, content-ref: string) -> result<list<u8>, string>,
@@ -84,9 +83,6 @@ pub(crate) fn tcp_send(connection_id: String, data: Vec<u8>) -> Result<u64, Stri
 
 #[import(module = "theater:simple/tcp", name = "close")]
 pub(crate) fn tcp_close(connection_id: String) -> Result<(), String>;
-
-#[import(module = "theater:simple/tcp", name = "upgrade-to-tls-client")]
-pub(crate) fn tcp_upgrade_to_tls_client(connection_id: String, server_name: String) -> Result<(), String>;
 
 #[import(module = "theater:simple/store", name = "get")]
 pub(crate) fn store_get(store_id: String, content_ref: String) -> Result<Vec<u8>, String>;

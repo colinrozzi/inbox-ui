@@ -11,10 +11,18 @@ package = "__PACKAGE__"
 type = "runtime"
 
 # tcp covers both the inbound transferred connection (from ui-acceptor)
-# and the outbound connect()+upgrade-to-tls-client to the inbox API for
-# every read (GET /v1/mailboxes/...) and write (POST .../send).
+# and the outbound connect() to the inbox API for every read
+# (GET /v1/mailboxes/...) and write (POST .../send).
 [[handler]]
 type = "tcp"
+
+# client_tls enables outbound TLS. With auto_handshake on (the default),
+# connect() to the https inbox API returns an already-encrypted stream;
+# the handler does NOT call upgrade-to-tls-client. Without this block the
+# handler cannot open TLS to mail.colinrozzi.com and every read/write 500s
+# ("client_tls not configured on this handler"). Mirrors the inbox CLI.
+[handler.client_tls]
+enabled = true
 
 [[handler]]
 type = "rpc"
