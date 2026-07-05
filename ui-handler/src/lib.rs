@@ -12,9 +12,10 @@
 //!   POST /send                     → submit compose → API → 303 → /m/<from>
 //!   GET  /static/style.css         → embedded stylesheet
 //!
-//! Reads (mailbox list, inbox listing, message body) are STUBBED in v0
-//! pending the store-direct vs API-over-loopback decision (see DESIGN.md
-//! §3). Once that lands, fill in store.rs accordingly.
+//! Reads (mailbox list, inbox listing, message body) go through the
+//! inbox API over TLS — see `api_reads.rs` — per the 2026-06-05
+//! API-over-loopback decision (DESIGN.md §3). Writes share the same
+//! path via `write_api.rs`.
 
 #![no_std]
 extern crate alloc;

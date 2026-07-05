@@ -11,7 +11,7 @@
 //!
 //! initial_state (JSON, one line):
 //!   {
-//!     "bearer_token":       "<API bearer used by handler for /api/send>",
+//!     "bearer_token":       "<API bearer for handler reads + POST /v1/mailboxes/<from>/send>",
 //!     "basic_auth":         "<htpasswd-style user:password for UI access>",
 //!     "api_base_url":       "https://mail.colinrozzi.com:443",
 //!     "ui_handler_manifest":"<theater resolve_reference>"
