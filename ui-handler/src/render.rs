@@ -16,6 +16,11 @@ pub fn css(body: &'static str) -> Vec<u8> {
     http(200, "text/css; charset=utf-8", body.as_bytes().to_vec(), &[])
 }
 
+/// Plain-text 200 — used for the unauthenticated `/healthz` readiness probe.
+pub fn ok_text(body: &'static str) -> Vec<u8> {
+    http(200, "text/plain; charset=utf-8", body.as_bytes().to_vec(), &[])
+}
+
 pub fn error(status: u16, msg: &str) -> Vec<u8> {
     let body = shell("error", &format!("<p class=\"err\">{}</p>", escape(msg)));
     http(status, "text/html; charset=utf-8", body.into_bytes(), &[])
