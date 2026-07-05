@@ -66,12 +66,24 @@ jobs:
             ASSETS+=("${ASSET}")
           done
 
-          # Sentinel sub-manifest templates as-is. They contain the
-          # __PACKAGE__/__BEARER_TOKEN__/... placeholders sentinel
-          # substitutes at spawn (see sentinel/ui-*.template.toml).
+          # Sentinel sub-manifest templates.
+          #
+          # ui-acceptor is the top-level sentinel child: its __PACKAGE__ (and
+          # __BEARER_TOKEN__/__BASIC_AUTH__/... secrets) are substituted by
+          # sentinel at spawn from its per-child config, so we ship it as-is.
+          #
+          # ui-handler is NOT a sentinel child — the acceptor resolves it via
+          # theater resolve_reference from the UI_HANDLER_MANIFEST URL — so its
+          # __PACKAGE__ must be self-referential to the handler wasm in THIS
+          # release (mirrors inbox's sub-manifests). Nothing downstream
+          # substitutes it, so we bake the URL in here.
+          HANDLER_WASM_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/inbox-ui-handler-${STAGE_TAG}.wasm"
           for tmpl in ui-acceptor ui-handler; do
             ASSET="inbox-${tmpl}-${STAGE_TAG}.toml"
             cp "sentinel/${tmpl}.template.toml" "${ASSET}"
+            if [ "$tmpl" = "ui-handler" ]; then
+              sed -i "s#__PACKAGE__#${HANDLER_WASM_URL}#" "${ASSET}"
+            fi
             ASSETS+=("${ASSET}")
           done
 
