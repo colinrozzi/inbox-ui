@@ -12,6 +12,13 @@ type = "runtime"
 [[handler]]
 type = "tcp"
 
+# Outbound TLS to the inbox API. With client_tls enabled the tcp handler
+# performs the TLS handshake at connect() time (auto_handshake defaults
+# to true), so every read (GET /v1/mailboxes/...) and write (POST .../send)
+# gets an encrypted stream without an explicit upgrade call.
+[handler.client_tls]
+enabled = true
+
 [[handler]]
 type = "rpc"
 

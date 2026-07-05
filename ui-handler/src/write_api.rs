@@ -6,9 +6,7 @@
 //! `Authorization: Bearer <token>`.
 
 use crate::request::url_encode;
-use crate::{
-    log, tcp_close, tcp_connect, tcp_receive, tcp_send, tcp_upgrade_to_tls_client, HandlerState,
-};
+use crate::{log, tcp_close, tcp_connect, tcp_receive, tcp_send, HandlerState};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -52,14 +50,15 @@ fn api_request(
     path: &str,
     body: Option<&str>,
 ) -> Result<ApiResponse, String> {
-    let (host, port, use_tls) = parse_base_url(&state.api_base_url)?;
+    // TLS is handled by the tcp handler's `[handler.client_tls]` config
+    // (auto_handshake, on by default): `connect()` returns an already-
+    // encrypted stream. We do NOT call `upgrade-to-tls-client` — with
+    // client_tls enabled that path errors with "already TLS". This mirrors
+    // the inbox CLI's outbound pattern (connect only, no explicit upgrade).
+    // `use_tls` from the scheme only selected the default port above.
+    let (host, port, _use_tls) = parse_base_url(&state.api_base_url)?;
     let conn = tcp_connect(format!("{}:{}", host, port))
         .map_err(|e| format!("tcp_connect {}:{}: {}", host, port, e))?;
-
-    if use_tls {
-        tcp_upgrade_to_tls_client(conn.clone(), host.clone())
-            .map_err(|e| format!("tls upgrade to {}: {}", host, e))?;
-    }
 
     let body_str = body.unwrap_or("");
     let content_headers = if body.is_some() {
