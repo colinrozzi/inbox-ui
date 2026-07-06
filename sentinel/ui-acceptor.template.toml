@@ -1,14 +1,22 @@
 # Sentinel-managed deploy template for ui-acceptor.
 #
-# Phase A (current): a single clean multi-child sentinel spawns this actor
-# as the named in-theater child "inbox-ui" (Topology B, per sentinel-dev
-# id=17). Spawn-on-init; crash -> respawn (rate-limited); external stop ->
-# no respawn. No public routing yet — bring-up order is UIs first, then
-# frontdoor, then the public-routing cutover.
+# Frontdoor-cutover edition: this actor terminates TLS on its loopback
+# socket so frontdoor at :443 can SNI-route inbox.colinrozzi.com and
+# forward the STILL-ENCRYPTED stream to 127.0.0.1:9443 (frontdoor is a
+# pure SNI router — it does NOT terminate TLS). It is spawned as the named
+# in-theater child "inbox-ui" under the clean multi-child sentinel
+# (Topology B). Spawn-on-init; crash -> respawn (rate-limited); external
+# stop -> no respawn.
 #
-# Sentinel renders this template by literal substring substitution of the
-# placeholders below (each wrapped in doubled underscores) from its
-# per-child config at every spawn:
+# (The Phase A bring-up ran this same child as PLAIN HTTP on the loopback
+# socket — no server_tls, no cert — so it didn't block on cert
+# provisioning. This edition re-adds server_tls for the public-URL
+# cutover; see "TLS TERMINATION" below.)
+#
+# The deploy step renders this template by literal substring substitution
+# of the placeholders below (each wrapped in doubled underscores) from the
+# per-child config, and writes the concrete manifest onto the box for
+# sentinel to spawn by path:
 #
 #   children: {
 #     "inbox-ui": {
@@ -18,7 +26,9 @@
 #         "BEARER_TOKEN":         "...",     # API bearer for reads + sends
 #         "BASIC_AUTH":           "...",     # "<user>:<password>"
 #         "API_BASE_URL":         "https://mail.colinrozzi.com:443",
-#         "UI_HANDLER_MANIFEST":  "<https URL of inbox-ui-handler-*.toml>"
+#         "UI_HANDLER_MANIFEST":  "<https URL of inbox-ui-handler-*.toml>",
+#         "CERT_PATH":            "/etc/letsencrypt/live/inbox.colinrozzi.com/fullchain.pem",
+#         "KEY_PATH":             "/etc/letsencrypt/live/inbox.colinrozzi.com/privkey.pem"
 #       }
 #     }
 #   }
@@ -42,18 +52,23 @@
 #
 # LISTEN ADDRESS:
 #   ui-acceptor binds 127.0.0.1:9443 (hardcoded, see ui-acceptor/src/lib.rs).
-#   Loopback-only and plain HTTP in Phase A — nothing outside the host
-#   reaches it. Readiness: an unauthenticated `GET /healthz` returns 200
-#   "ok" (it spawns a handler and replies without touching the store or
-#   upstream API), which is what sentinel should health-gate on.
+#   Loopback-only: frontdoor forwards to 127.0.0.1:9443 and nothing else
+#   should reach it directly. Readiness: an unauthenticated `GET /healthz`
+#   returns 200 "ok" (it spawns a handler and replies without touching the
+#   store or upstream API) — health-gate on that. Note the probe must speak
+#   TLS now (https), since the socket terminates TLS (see below).
 #
-# DEFERRED TO THE FRONTDOOR-CUTOVER PHASE (not Phase A):
-#   When frontdoor at :443 SNI-routes inbox.colinrozzi.com -> 127.0.0.1:9443,
-#   this actor will terminate TLS on that socket. That needs (a) a cert
-#   covering inbox.colinrozzi.com provisioned on the host, and (b) a
-#   [handler.server_tls] block here wired to CERT_PATH/KEY_PATH secrets.
-#   Both are intentionally omitted now so Phase A does not block on cert
-#   provisioning. Re-add at the cutover.
+# TLS TERMINATION — CERT_PATH / KEY_PATH:
+#   The [handler.server_tls] block below makes theater terminate TLS on the
+#   loopback socket using the cert+key at the operator-provided paths. The
+#   accept loop performs the handshake automatically (bounded 10s timeout,
+#   off the accept loop per theater #132) and hands the ui-handler an
+#   already-decrypted stream — no actor code change vs the plain build.
+#   The cert MUST cover the SNI hostname clients type — inbox.colinrozzi.com
+#   — so the browser's TLS handshake (completed at THIS backend, after
+#   frontdoor's opaque pass-through) validates. Provision a Let's Encrypt
+#   cert for inbox.colinrozzi.com at the CERT_PATH/KEY_PATH paths before the
+#   cutover window; theater reads both as PEM files at spawn.
 #
 # WHY initial_state IS A SINGLE-LINE TOML LITERAL:
 #   Sentinel embeds this entire template as a STRING value in its own
@@ -69,10 +84,15 @@ initial_state = '{"bearer_token":"__BEARER_TOKEN__","basic_auth":"__BASIC_AUTH__
 [[handler]]
 type = "runtime"
 
-# Plain-HTTP listener on 127.0.0.1:9443 in Phase A. No [handler.server_tls]
-# yet — see "DEFERRED TO THE FRONTDOOR-CUTOVER PHASE" above.
+# TLS-terminating listener on 127.0.0.1:9443. theater performs the server
+# handshake automatically using the cert+key below (see "TLS TERMINATION").
 [[handler]]
 type = "tcp"
+
+[handler.server_tls]
+enabled = true
+cert = "__CERT_PATH__"
+key = "__KEY_PATH__"
 
 # ui-acceptor spawns a fresh ui-handler child per connection.
 [[handler]]
