@@ -3,10 +3,19 @@ name = "ui-acceptor"
 version = "0.1.0"
 edition = "2021"
 
+# Standalone package (own workspace) so `theater build --release ui-acceptor`
+# builds the member into ui-acceptor/target/ and can find + compose it. See
+# theater docs/self-contained-actor-recipe.md.
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-packr-guest = { version = "0.8.1", features = ["derive", "pic"] }
+packr-guest = { version = "0.10.2", features = ["derive"] }
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+[profile.release]
+opt-level = "s"
+lto = true

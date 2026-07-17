@@ -1,10 +1,7 @@
-# Local-dev manifest for ui-handler. Spawned per-connection by ui-acceptor.
-#
-# The sentinel-rendered production manifest is at
-# sentinel/ui-handler.template.toml.
 name = "ui-handler"
 version = "0.1.0"
-package = "target/wasm32-unknown-unknown/release/ui_handler.wasm"
+package = "/home/colin/work/agentry-workspaces/inbox-ui-dev/ui-handler/target/wasm32-unknown-unknown/release/ui_handler.composite.wasm"
+static_package = false
 
 [[handler]]
 type = "runtime"
@@ -12,12 +9,10 @@ type = "runtime"
 [[handler]]
 type = "tcp"
 
-# Outbound TLS to the inbox API. With client_tls enabled the tcp handler
-# performs the TLS handshake at connect() time (auto_handshake defaults
-# to true), so every read (GET /v1/mailboxes/...) and write (POST .../send)
-# gets an encrypted stream without an explicit upgrade call.
 [handler.client_tls]
 enabled = true
+skip_verify = false
+auto_handshake = true
 
 [[handler]]
 type = "rpc"

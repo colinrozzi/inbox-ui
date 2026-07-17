@@ -1,16 +1,18 @@
 name: Release
 
 # Triggered by pushing a `release-YYYYMMDD-<sha>` tag (or manually). Builds
-# both wasms via `nix build`, copies the sentinel sub-manifest templates
-# alongside, and uploads everything as release assets with the same
-# stage-tagged naming convention used across the theater ecosystem.
+# each actor as a packr 0.10.2 SELF-CONTAINED COMPOSITE via
+# `theater build --release <actor-dir>` (cargo-builds the fixed-base member,
+# links it with the packr bundled allocator, verifies host-only imports),
+# then uploads the composites + sentinel sub-manifest templates as release
+# assets. A bare member is NOT loadable by the 0.10.x runtime — the composite
+# is the deploy artifact.
 #
-# Sentinel consumes these URLs as its `children.inbox-ui` config:
-#   default_package    = .../inbox-ui-acceptor-<stage>.wasm
-#   manifest_template  = .../inbox-ui-acceptor-<stage>.toml  (with __PACKAGE__/__BEARER_TOKEN__/... substituted at spawn)
-# The acceptor's UI_HANDLER_MANIFEST placeholder is in turn set to the
-# matching `inbox-ui-handler-<stage>.toml` URL, and that template's own
-# __PACKAGE__ resolves to `inbox-ui-handler-<stage>.wasm`.
+# Sentinel consumes these as its `children.inbox-ui` config:
+#   default_package    = .../inbox-ui-acceptor-<stage>.composite.wasm
+#   manifest_template  = .../inbox-ui-acceptor-<stage>.toml  (__PACKAGE__/__BEARER_TOKEN__/... substituted at deploy)
+# The acceptor's UI_HANDLER_MANIFEST is set to inbox-ui-handler-<stage>.toml,
+# whose __PACKAGE__ is self-referenced here to inbox-ui-handler-<stage>.composite.wasm.
 
 on:
   push:
@@ -22,7 +24,7 @@ permissions:
 
 jobs:
   release:
-    name: Build + tag + upload artifacts
+    name: Build composites + tag + upload artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,11 +32,29 @@ jobs:
           fetch-depth: 0
 
       - uses: DeterminateSystems/nix-installer-action@main
-
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Build wasms
-        run: nix build
+      - name: theater build --release (compose + verify-in-build) both actors
+        run: |
+          set -euo pipefail
+          for a in ui-acceptor ui-handler; do
+            echo "::group::theater build $a"
+            nix develop --command theater build --release "$a"
+            echo "::endgroup::"
+          done
+
+      - name: Assert both composites are self-contained (host-only imports)
+        run: |
+          set -euo pipefail
+          for a in ui-acceptor ui-handler; do
+            m=${a//-/_}
+            C="$a/target/wasm32-unknown-unknown/release/${m}.composite.wasm"
+            test -f "$C" || { echo "::error::composite not emitted: $C"; exit 1; }
+            nix develop --command wasm-tools validate "$C"
+            bad=$(nix develop --command bash -c "wasm-tools print '$C' | grep -E '^[[:space:]]*\\(import ' | grep -v 'theater:simple/' || true")
+            if [ -n "$bad" ]; then echo "::error::$a has non-host imports (not self-contained):"; echo "$bad"; exit 1; fi
+            echo "$a composite self-contained: $C ($(stat -c%s "$C") bytes)"
+          done
 
       - name: Create GitHub release and upload artifacts
         env:
@@ -57,35 +77,24 @@ jobs:
           STAGE_TAG="${TAG#release-}"
           ASSETS=()
 
-          # Per-actor wasms — stage-tagged so the URL is stable for
-          # sentinel to pin.
-          for actor in ui_acceptor ui_handler; do
-            ASSET="inbox-${actor//_/-}-${STAGE_TAG}.wasm"
-            cp "$(realpath result)/${actor}.wasm" "${ASSET}"
-            chmod +w "${ASSET}"
-            ASSETS+=("${ASSET}")
-          done
+          # Per-actor self-contained composites — stage-tagged, stable URL.
+          cp "ui-acceptor/target/wasm32-unknown-unknown/release/ui_acceptor.composite.wasm" \
+             "inbox-ui-acceptor-${STAGE_TAG}.composite.wasm"
+          cp "ui-handler/target/wasm32-unknown-unknown/release/ui_handler.composite.wasm" \
+             "inbox-ui-handler-${STAGE_TAG}.composite.wasm"
+          ASSETS+=("inbox-ui-acceptor-${STAGE_TAG}.composite.wasm" "inbox-ui-handler-${STAGE_TAG}.composite.wasm")
 
           # Sentinel sub-manifest templates.
-          #
-          # ui-acceptor is the top-level sentinel child: its __PACKAGE__ (and
-          # __BEARER_TOKEN__/__BASIC_AUTH__/... secrets) are substituted by
-          # sentinel at spawn from its per-child config, so we ship it as-is.
-          #
-          # ui-handler is NOT a sentinel child — the acceptor resolves it via
-          # theater resolve_reference from the UI_HANDLER_MANIFEST URL — so its
-          # __PACKAGE__ must be self-referential to the handler wasm in THIS
-          # release (mirrors inbox's sub-manifests). Nothing downstream
-          # substitutes it, so we bake the URL in here.
-          HANDLER_WASM_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/inbox-ui-handler-${STAGE_TAG}.wasm"
-          for tmpl in ui-acceptor ui-handler; do
-            ASSET="inbox-${tmpl}-${STAGE_TAG}.toml"
-            cp "sentinel/${tmpl}.template.toml" "${ASSET}"
-            if [ "$tmpl" = "ui-handler" ]; then
-              sed -i "s#__PACKAGE__#${HANDLER_WASM_URL}#" "${ASSET}"
-            fi
-            ASSETS+=("${ASSET}")
-          done
+          #  - ui-acceptor is the sentinel child: __PACKAGE__ (+ secrets) are
+          #    substituted by the deploy step from its per-child config; ship as-is.
+          #  - ui-handler is resolved by the acceptor via the UI_HANDLER_MANIFEST
+          #    URL (theater resolve_reference), so nothing downstream substitutes
+          #    its __PACKAGE__ — self-reference it to the handler composite here.
+          HANDLER_COMPOSITE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/inbox-ui-handler-${STAGE_TAG}.composite.wasm"
+          cp "sentinel/ui-acceptor.template.toml" "inbox-ui-acceptor-${STAGE_TAG}.toml"
+          sed "s#__PACKAGE__#${HANDLER_COMPOSITE_URL}#" \
+             "sentinel/ui-handler.template.toml" > "inbox-ui-handler-${STAGE_TAG}.toml"
+          ASSETS+=("inbox-ui-acceptor-${STAGE_TAG}.toml" "inbox-ui-handler-${STAGE_TAG}.toml")
 
           gh release upload "$TAG" "${ASSETS[@]}"
 
