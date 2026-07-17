@@ -17,10 +17,11 @@
     };
     crane.url = "github:ipetkov/crane";
 
-    # Pinned to a packr-0.10.2 theater (ships `theater build` + the 0.10.x
-    # self-contained loader). Bump in lockstep with the runtime.
+    # Pinned to the canonical packr-0.10.2 theater rev 7daab2ad (theater
+    # PR #141: `theater build`/`theater compose` + the 0.10.x self-contained
+    # loader). The fleet-canonical pin; bump in lockstep with the runtime.
     theater = {
-      url = "github:colinrozzi/theater";
+      url = "github:colinrozzi/theater/7daab2ad";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
