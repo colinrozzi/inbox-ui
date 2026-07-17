@@ -1,0 +1,16 @@
+[target.wasm32-unknown-unknown]
+# Fixed-base self-contained member (packr 0.10.2). `theater build` links this
+# member + the packr bundled allocator into an own-memory composite via
+# packr::link (wasm-merge). --no-merge-data-segments keeps the CGRF __pack_types
+# metadata as its own segment so read_surface finds it. Single-package actor →
+# --global-base=0x50000 (327680), the first package slot. See theater
+# docs/self-contained-actor-recipe.md.
+rustflags = [
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--initial-memory=8388608",
+    "-C", "link-arg=--stack-first",
+    "-C", "link-arg=-zstack-size=262144",
+    "-C", "link-arg=--global-base=327680",
+    "-C", "link-arg=--no-entry",
+    "-C", "link-arg=--no-merge-data-segments",
+]
