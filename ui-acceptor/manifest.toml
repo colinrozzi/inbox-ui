@@ -1,15 +1,14 @@
 # Local-dev manifest for ui-acceptor. Plain HTTP on 127.0.0.1:9443.
 #
-# `package` points at the self-contained COMPOSITE (packr 0.10.2): a bare
-# cargo member is not loadable by theater's 0.10.x loader. Build it with
-# `theater build --release ui-acceptor` (composes member + allocator, then
-# rewrites this field to the absolute composite path — expected; not committed).
+# `package` points at the plain packr 0.11.0 cdylib. Build it with
+# `cargo build --target wasm32-unknown-unknown --release` (the two link-args
+# in .cargo/config.toml make it directly loadable — no compose step).
 #
 # The sentinel-rendered production manifest lives at
 # sentinel/ui-acceptor.template.toml (server_tls + secrets substituted).
 name = "ui-acceptor"
 version = "0.1.0"
-package = "target/wasm32-unknown-unknown/release/ui_acceptor.composite.wasm"
+package = "target/wasm32-unknown-unknown/release/ui_acceptor.wasm"
 
 [[handler]]
 type = "runtime"

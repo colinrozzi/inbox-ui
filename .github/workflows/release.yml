@@ -1,18 +1,16 @@
 name: Release
 
 # Triggered by pushing a `release-YYYYMMDD-<sha>` tag (or manually). Builds
-# each actor as a packr 0.10.2 SELF-CONTAINED COMPOSITE via
-# `theater build --release <actor-dir>` (cargo-builds the fixed-base member,
-# links it with the packr bundled allocator, verifies host-only imports),
-# then uploads the composites + sentinel sub-manifest templates as release
-# assets. A bare member is NOT loadable by the 0.10.x runtime — the composite
-# is the deploy artifact.
+# each actor as a packr 0.11.0 PLAIN cdylib (`cargo build`), verifies its
+# import surface is host-only, and uploads the bare <name>.wasm + sentinel
+# sub-manifest templates as release assets. No compose step (packr 0.11.0
+# retired composition); the plain wasm is directly loadable.
 #
 # Sentinel consumes these as its `children.inbox-ui` config:
-#   default_package    = .../inbox-ui-acceptor-<stage>.composite.wasm
+#   default_package    = .../inbox-ui-acceptor-<stage>.wasm
 #   manifest_template  = .../inbox-ui-acceptor-<stage>.toml  (__PACKAGE__/__BEARER_TOKEN__/... substituted at deploy)
 # The acceptor's UI_HANDLER_MANIFEST is set to inbox-ui-handler-<stage>.toml,
-# whose __PACKAGE__ is self-referenced here to inbox-ui-handler-<stage>.composite.wasm.
+# whose __PACKAGE__ is self-referenced here to inbox-ui-handler-<stage>.wasm.
 
 on:
   push:
@@ -24,7 +22,7 @@ permissions:
 
 jobs:
   release:
-    name: Build composites + tag + upload artifacts
+    name: Build plain wasms + tag + upload artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,26 +32,26 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: theater build --release (compose + verify-in-build) both actors
+      - name: cargo build --release (plain cdylib) both actors
         run: |
           set -euo pipefail
           for a in ui-acceptor ui-handler; do
-            echo "::group::theater build $a"
-            nix develop --command theater build --release "$a"
+            echo "::group::cargo build $a"
+            nix develop --command bash -c "cd $a && cargo build --target wasm32-unknown-unknown --release"
             echo "::endgroup::"
           done
 
-      - name: Assert both composites are self-contained (host-only imports)
+      - name: Assert both wasms are self-contained (host-only imports)
         run: |
           set -euo pipefail
           for a in ui-acceptor ui-handler; do
             m=${a//-/_}
-            C="$a/target/wasm32-unknown-unknown/release/${m}.composite.wasm"
-            test -f "$C" || { echo "::error::composite not emitted: $C"; exit 1; }
-            nix develop --command wasm-tools validate "$C"
-            bad=$(nix develop --command bash -c "wasm-tools print '$C' | grep -E '^[[:space:]]*\\(import ' | grep -v 'theater:simple/' || true")
-            if [ -n "$bad" ]; then echo "::error::$a has non-host imports (not self-contained):"; echo "$bad"; exit 1; fi
-            echo "$a composite self-contained: $C ($(stat -c%s "$C") bytes)"
+            W="$a/target/wasm32-unknown-unknown/release/${m}.wasm"
+            test -f "$W" || { echo "::error::wasm not built: $W"; exit 1; }
+            nix develop --command wasm-tools validate "$W"
+            bad=$(nix develop --command bash -c "wasm-tools print '$W' | grep -E '^[[:space:]]*\\(import ' | grep -v 'theater:simple/' || true")
+            if [ -n "$bad" ]; then echo "::error::$a has non-host imports (recipe not applied):"; echo "$bad"; exit 1; fi
+            echo "$a self-contained: $W ($(stat -c%s "$W") bytes)"
           done
 
       - name: Create GitHub release and upload artifacts
@@ -77,22 +75,22 @@ jobs:
           STAGE_TAG="${TAG#release-}"
           ASSETS=()
 
-          # Per-actor self-contained composites — stage-tagged, stable URL.
-          cp "ui-acceptor/target/wasm32-unknown-unknown/release/ui_acceptor.composite.wasm" \
-             "inbox-ui-acceptor-${STAGE_TAG}.composite.wasm"
-          cp "ui-handler/target/wasm32-unknown-unknown/release/ui_handler.composite.wasm" \
-             "inbox-ui-handler-${STAGE_TAG}.composite.wasm"
-          ASSETS+=("inbox-ui-acceptor-${STAGE_TAG}.composite.wasm" "inbox-ui-handler-${STAGE_TAG}.composite.wasm")
+          # Per-actor plain wasms — stage-tagged, stable URL.
+          cp "ui-acceptor/target/wasm32-unknown-unknown/release/ui_acceptor.wasm" \
+             "inbox-ui-acceptor-${STAGE_TAG}.wasm"
+          cp "ui-handler/target/wasm32-unknown-unknown/release/ui_handler.wasm" \
+             "inbox-ui-handler-${STAGE_TAG}.wasm"
+          ASSETS+=("inbox-ui-acceptor-${STAGE_TAG}.wasm" "inbox-ui-handler-${STAGE_TAG}.wasm")
 
           # Sentinel sub-manifest templates.
           #  - ui-acceptor is the sentinel child: __PACKAGE__ (+ secrets) are
-          #    substituted by the deploy step from its per-child config; ship as-is.
+          #    substituted by the deploy step; ship as-is.
           #  - ui-handler is resolved by the acceptor via the UI_HANDLER_MANIFEST
-          #    URL (theater resolve_reference), so nothing downstream substitutes
-          #    its __PACKAGE__ — self-reference it to the handler composite here.
-          HANDLER_COMPOSITE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/inbox-ui-handler-${STAGE_TAG}.composite.wasm"
+          #    URL, so nothing downstream substitutes its __PACKAGE__ — self-ref
+          #    it to the handler wasm here.
+          HANDLER_WASM_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/inbox-ui-handler-${STAGE_TAG}.wasm"
           cp "sentinel/ui-acceptor.template.toml" "inbox-ui-acceptor-${STAGE_TAG}.toml"
-          sed "s#__PACKAGE__#${HANDLER_COMPOSITE_URL}#" \
+          sed "s#__PACKAGE__#${HANDLER_WASM_URL}#" \
              "sentinel/ui-handler.template.toml" > "inbox-ui-handler-${STAGE_TAG}.toml"
           ASSETS+=("inbox-ui-acceptor-${STAGE_TAG}.toml" "inbox-ui-handler-${STAGE_TAG}.toml")
 
