@@ -1,7 +1,13 @@
+# Local-dev manifest for ui-handler. Spawned per-connection by ui-acceptor.
+#
+# `package` points at the plain packr 0.11.0 cdylib. Build it with
+# `cargo build --target wasm32-unknown-unknown --release`.
+#
+# The sentinel-rendered production manifest is at
+# sentinel/ui-handler.template.toml.
 name = "ui-handler"
 version = "0.1.0"
-package = "/home/colin/work/agentry-workspaces/inbox-ui-dev/ui-handler/target/wasm32-unknown-unknown/release/ui_handler.composite.wasm"
-static_package = false
+package = "target/wasm32-unknown-unknown/release/ui_handler.wasm"
 
 [[handler]]
 type = "runtime"
@@ -9,10 +15,9 @@ type = "runtime"
 [[handler]]
 type = "tcp"
 
+# Outbound TLS to the inbox API (auto-handshake at connect()).
 [handler.client_tls]
 enabled = true
-skip_verify = false
-auto_handshake = true
 
 [[handler]]
 type = "rpc"

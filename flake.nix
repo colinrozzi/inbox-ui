@@ -1,12 +1,12 @@
 {
   description = "inbox-ui: web UI for the inbox mail service, built on Theater";
 
-  # packr 0.10.2 self-contained model: actors are built with
-  # `theater build --release <actor-dir>`, which cargo-builds the fixed-base
-  # member (see each actor's .cargo/config.toml), links it with the packr
-  # bundled allocator into a self-contained <name>.composite.wasm, and
-  # verifies host-only imports. There is no crane/nix build of the wasm here;
-  # the devShell provides the toolchain and CI runs `theater build` in it.
+  # packr 0.11.0 plain-build model: an actor is a plain `cargo build` cdylib.
+  # setup_guest!() links dlmalloc in, so the wasm exports its own growable
+  # memory + __pack_alloc/__pack_free + lifecycle and imports only host
+  # theater:simple/*. No compose step, no binaryen, no fixed-base recipe — the
+  # two link-args live in each actor's .cargo/config.toml. The devShell just
+  # needs a wasm32 rust toolchain + wasm-tools (import-surface verify).
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -17,11 +17,11 @@
     };
     crane.url = "github:ipetkov/crane";
 
-    # Pinned to the canonical packr-0.10.2 theater rev 7daab2ad (theater
-    # PR #141: `theater build`/`theater compose` + the 0.10.x self-contained
-    # loader). The fleet-canonical pin; bump in lockstep with the runtime.
+    # Pinned to the packr-0.11.0 theater (PR #149, rev 73a4540b). Used for the
+    # runtime binary (local `theater spawn` / `nix build .#theater`); the actor
+    # BUILD no longer needs theater.
     theater = {
-      url = "github:colinrozzi/theater/7daab2ad";
+      url = "github:colinrozzi/theater/73a4540b";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
@@ -38,34 +38,24 @@
           targets = [ "wasm32-unknown-unknown" ];
         };
 
-        # theater CLI (has `theater build` + the 0.10.x runtime).
-        theaterBin = theater.packages.${system}.default;
-
       in {
-        # `theater build` needs wasm-merge (binaryen) + wasm-tools on PATH, plus
-        # cargo with the wasm32 target. This shell provides all of them:
-        #   nix develop --command theater build --release ui-acceptor
-        #   nix develop --command theater build --release ui-handler
+        # Build + verify shell (fast — no theater/binaryen build):
+        #   nix develop --command bash -c 'cd ui-acceptor && cargo build --target wasm32-unknown-unknown --release'
+        #   nix develop --command bash -c 'cd ui-handler  && cargo build --target wasm32-unknown-unknown --release'
+        #   wasm-tools print <name>.wasm | grep '(import' | grep -v theater:simple/   # must be empty
         devShells.default = pkgs.mkShell {
-          packages = [
-            rustToolchain
-            theaterBin
-            pkgs.binaryen   # wasm-merge — packr::link fuses the composite
-            pkgs.wasm-tools # validate + self-contained import check
-          ];
-          # Echo to STDERR so `nix develop --command <cmd>` leaves stdout clean
-          # (the release CI captures `wasm-tools print` stdout to grep imports).
+          packages = [ rustToolchain pkgs.wasm-tools ];
+          # stderr so `nix develop --command wasm-tools print` stdout stays clean.
           shellHook = ''
             {
-              echo "inbox-ui dev environment (packr 0.10.2 self-contained)"
-              echo "  theater build --release ui-acceptor   # -> ui_acceptor.composite.wasm"
-              echo "  theater build --release ui-handler    # -> ui_handler.composite.wasm"
-              echo "  theater spawn ui-acceptor/manifest.toml"
+              echo "inbox-ui dev environment (packr 0.11.0 plain build)"
+              echo "  (cd ui-acceptor && cargo build --target wasm32-unknown-unknown --release)"
+              echo "  (cd ui-handler  && cargo build --target wasm32-unknown-unknown --release)"
             } >&2
           '';
         };
 
-        # nix build .#theater — the pinned theater CLI/runtime binary.
-        packages.theater = theaterBin;
+        # nix build .#theater — the pinned 0.11.0 theater runtime binary (spawn).
+        packages.theater = theater.packages.${system}.default;
       });
 }
